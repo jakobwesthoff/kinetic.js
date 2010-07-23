@@ -190,127 +190,142 @@
             width: "400px",
             height: "400px"
         }, options );
-
-        var velocityX = __store( $(this), "velocityX" ),
-            velocityY = __store( $(this), "velocityY" ),
-            lastTouches = null;
-            movementTimer = null,
-            target = $(this),
-            container = $( '<div />', {
-                css: {
-                    'position': 'relative',
-                    'overflow': 'hidden',
-                    'width': options.width,
-                    'height': options.height,
-                    'border': "1px solid orange"
-                }
-            });
-
-        target.css({
-            'position': 'absolute',
-            'top': '0px',
-            'left': '0px'
-        }).wrap( container );
-
-        // Update the container to the real DOM element
-        container = target.parent();
-
-        container.bind( touchstart, encapsulateTouchEvent( function( e ) {
-            // Stop all running movements
-            if ( movementTimer !== null ) {
-                clearInterval( movementTimer );
-                movementTimer = null;
-            }
-
-            lastTouches = [{
-                'time': e.timeStamp,
-                'x': e.pageX,
-                'y': e.pageY
-            }];
-
-            // Movement needs only to be checked if a finger is down.
-            container.bind( touchmove, encapsulateTouchEvent( function( e ) {
-                var lastTouch = lastTouches[lastTouches.length - 1],
-                    currentTouch = null;
-
-
-                lastTouches.push( 
-                    currentTouch = {
-                        'time': e.timeStamp,
-                        'x': e.pageX,
-                        'y': e.pageY
+        
+        // Handle element sets correctly
+        this.each( function() {
+            var velocityX = __store( $(this), "velocityX" ),
+                velocityY = __store( $(this), "velocityY" ),
+                lastTouches = null;
+                movementTimer = null,
+                target = $(this),
+                container = $( '<div />', {
+                    css: {
+                        'position': 'relative',
+                        'overflow': 'hidden',
+                        'width': options.width,
+                        'height': options.height,
+                        'border': "1px solid orange"
                     }
-                );
-
-                // Scroll by given movement
-                target.css({
-                    'top': 
-                        parseInt( target.css( "top" ) ) - ( lastTouch.y - currentTouch.y ) + "px",
-                    'left':
-                        parseInt( target.css( "left" ) ) - ( lastTouch.x - currentTouch.x ) + "px",
                 });
 
-                // Only store configured amount of samples
-                if ( lastTouches.length > options.touchsamples ) {
-                    lastTouches.shift();
+            target.css({
+                'position': 'absolute',
+                'top': '0px',
+                'left': '0px'
+            }).wrap( container );
+
+            // Update the container to the real DOM element
+            container = target.parent();
+
+            /**
+             * Handle initial data gathering the moment a finger touches the
+             * screen
+             */
+            container.bind( touchstart, encapsulateTouchEvent( function( e ) {
+                // Stop all running movements
+                if ( movementTimer !== null ) {
+                    clearInterval( movementTimer );
+                    movementTimer = null;
                 }
-            }) );
-        }) );
 
-        container.bind( touchend, encapsulateTouchEvent( function( e ) {                      
-            var startTouch = null,
-                endTouch = null;
+                lastTouches = [{
+                    'time': e.timeStamp,
+                    'x': e.pageX,
+                    'y': e.pageY
+                }];
 
-            // Movement does not need to be checked until the finger is down on
-            // the display the next time
-            container.unbind( touchmove );
 
-            // Only accumulate movements not older than
-            // options.accumulationTime
-            $.each( lastTouches, function( i, touch ) {
-                if ( e.timeStamp - touch.time > options.accumulationTime )  {
-                    return;
-                }
-                
-                if ( startTouch === null ) {
-                    startTouch = touch;
-                } else {
-                    endTouch = touch;
-                }
-            });
-                
-            if ( startTouch === null || endTouch === null ) {
-                // No movement required
-                console.log( "timeframe to small" );
-                return;
-            }
+                /**
+                 * Check and react to movement, while a finger is down on the
+                 * screen
+                 */
+                container.bind( touchmove, encapsulateTouchEvent( function( e ) {
+                    var lastTouch = lastTouches[lastTouches.length - 1],
+                        currentTouch = null;
 
-            velocityX( 
-                set( ( endTouch.x - startTouch.x ) / ( endTouch.time - startTouch.time ) ) 
-            );
 
-            velocityY( 
-                set( ( endTouch.y - startTouch.y ) / ( endTouch.time - startTouch.time ) ) 
-            );
-            
-            if ( movementTimer == null ) {
-                movementTimer = setInterval( function() {
+                    lastTouches.push( 
+                        currentTouch = {
+                            'time': e.timeStamp,
+                            'x': e.pageX,
+                            'y': e.pageY
+                        }
+                    );
+
+                    // Scroll by given movement
                     target.css({
-                        'top':
-                             Math.floor( parseInt( target.css( 'top' ) ) + velocityY() * options.resolution ) + 'px',
+                        'top': 
+                            parseInt( target.css( "top" ) ) - ( lastTouch.y - currentTouch.y ) + "px",
                         'left':
-                             Math.floor( parseInt( target.css( 'left' ) ) + velocityX() * options.resolution )  + 'px'
+                            parseInt( target.css( "left" ) ) - ( lastTouch.x - currentTouch.x ) + "px",
                     });
 
-                    var newVelocityX = velocityX( converge( options.deceleration ) ),
-                        newVelocityY = velocityY( converge( options.deceleration ) );
-
-                    if ( newVelocityX === 0 && newVelocityY === 0 ) {
-                        clearInterval( movementTimer );
-                        movementTimer = null;
+                    // Only store configured amount of samples
+                    if ( lastTouches.length > options.touchsamples ) {
+                        lastTouches.shift();
                     }
-                }, options.resolution );
-            }
-        }) );
+                }) );
+            }) );
+
+            /**
+             * Apply kinetic scrolling after the finger has been removed from
+             * the screen
+             */
+            container.bind( touchend, encapsulateTouchEvent( function( e ) {                      
+                var startTouch = null,
+                    endTouch = null;
+
+                // Movement does not need to be checked until the finger is down on
+                // the display the next time
+                container.unbind( touchmove );
+
+                // Only accumulate movements not older than
+                // options.accumulationTime
+                $.each( lastTouches, function( i, touch ) {
+                    if ( e.timeStamp - touch.time > options.accumulationTime )  {
+                        return;
+                    }
+                    
+                    if ( startTouch === null ) {
+                        startTouch = touch;
+                    } else {
+                        endTouch = touch;
+                    }
+                });
+                    
+                if ( startTouch === null || endTouch === null ) {
+                    // No movement required
+                    console.log( "timeframe to small" );
+                    return;
+                }
+
+                velocityX( 
+                    set( ( endTouch.x - startTouch.x ) / ( endTouch.time - startTouch.time ) ) 
+                );
+
+                velocityY( 
+                    set( ( endTouch.y - startTouch.y ) / ( endTouch.time - startTouch.time ) ) 
+                );
+                
+                if ( movementTimer == null ) {
+                    movementTimer = setInterval( function() {
+                        target.css({
+                            'top':
+                                 Math.floor( parseInt( target.css( 'top' ) ) + velocityY() * options.resolution ) + 'px',
+                            'left':
+                                 Math.floor( parseInt( target.css( 'left' ) ) + velocityX() * options.resolution )  + 'px'
+                        });
+
+                        var newVelocityX = velocityX( converge( options.deceleration ) ),
+                            newVelocityY = velocityY( converge( options.deceleration ) );
+
+                        if ( newVelocityX === 0 && newVelocityY === 0 ) {
+                            clearInterval( movementTimer );
+                            movementTimer = null;
+                        }
+                    }, options.resolution );
+                }
+            }) );
+        });
     }
 })( jQuery );
