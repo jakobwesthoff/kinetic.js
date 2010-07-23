@@ -88,18 +88,17 @@
 
     $.fn.kinetic = function( options ) {
         options = $.extend({
-            initialAccelerationTime: 4.0,
-            deceleration: 0.020,
+            deceleration: 0.03,            
             resolution: 13,
-            width: "200px",
-            height: "200px"
+            touchsamples: 500,
+            accumulationTime: 200,
+            width: "400px",
+            height: "400px"
         }, options );
 
-        var accelerationY = __store( $(this), "accelerationY" ),
+        var velocityX = __store( $(this), "velocityX" ),
             velocityY = __store( $(this), "velocityY" ),
-            sqrtResolution = Math.sqrt( options.resolution ),
-            initialY = 0,
-            initalTime = 0,
+            lastTouches = null;
             movementTimer = null,
             target = $(this),
             container = $( '<div />', {
@@ -120,42 +119,117 @@
 
         // Update the container to the real DOM element
         container = target.parent();
-        
+
         container.bind( "touchstart.kinetic", function( e ) {
-            initialY = e.originalEvent.touches[0].pageY;
-            initialTime = e.timeStamp;
-            console.log( "touchstart" );
+            var eo = e.originalEvent;
+
+
+            // Only handle first finger touchstart
+            if ( eo.touches.length !== 1 ) {
+                return;
+            }
+
+            // Stop all running movements
+            if ( movementTimer !== null ) {
+                clearInterval( movementTimer );
+                movementTimer = null;
+            }
+
+            lastTouches = [{
+                'time': e.timeStamp,
+                'x': eo.touches[0].pageX,
+                'y': eo.touches[0].pageY
+            }];
         });
 
-        container.bind( "touchend.kinetic", function( e ) {
-            var dTime = e.timeStamp - initialTime,
-                dPosition = e.originalEvent.changedTouches[0].pageY - initialY,
-                initialAcceleration = ( dPosition * options.initialAccelerationTime ) / dTime;
+        container.bind( "touchmove.kinetic", function( e ) {
+            var eo = e.originalEvent,
+                lastTouch = lastTouches[lastTouches.length - 1],
+                currentTouch = null;
+
+            // Check if the first finger moved
+            if ( lastTouch.x == eo.touches[0].pageX && lastTouch.y == eo.touches[0].pageY ) {
+                // No movement of the first finger
+                // @TODO: Something ist not 100% correct here concerning
+                // multiple finger movement
+                return;
+            }
+
+            lastTouches.push( 
+                currentTouch = {
+                    'time': e.timeStamp,
+                    'x': eo.touches[0].pageX,
+                    'y': eo.touches[0].pageY
+                }
+            );
+
+            // Scroll by given movement
+            target.css({
+                'top': 
+                    parseInt( target.css( "top" ) ) - ( lastTouch.y - currentTouch.y ) + "px",
+                'left':
+                    parseInt( target.css( "left" ) ) - ( lastTouch.x - currentTouch.x ) + "px",
+            });
+
+            // Only store configured amount of samples
+            if ( lastTouches.length > options.touchsamples ) {
+                lastTouches.shift();
+            }
+        });
+
+        container.bind( "touchend.kinetic", function( e ) {                      
+            var eo = e.originalEvent,
+                startTouch = null,
+                endTouch = null;
+
+            /*
+            if ( eo.changedTouches.length != 1 ) {
+                return;
+            }
+*/
+            // Only accumulate movements not older than
+            // options.accumulationTime
+            $.each( lastTouches, function( i, touch ) {
+                if ( e.timeStamp - touch.time > options.accumulationTime )  {
+                    return;
+                }
                 
-            accelerationY( add( initialAcceleration ) );
+                if ( startTouch === null ) {
+                    startTouch = touch;
+                } else {
+                    endTouch = touch;
+                }
+            });
+                
+            if ( startTouch === null || endTouch === null ) {
+                // No movement required
+                console.log( "timeframe to small" );
+                return;
+            }
 
-            console.log( "touchend" );
+            velocityX( 
+                set( ( endTouch.x - startTouch.x ) / ( endTouch.time - startTouch.time ) ) 
+            );
 
-            //console.log( "initialAcceleration: %d\ndTime: %d\ndPosition: %d\naccelerationY: %d", initialAcceleration, dTime, dPosition, accelerationY() );
-            console.log( "dPosition: " + dPosition );
-            console.log( e.originalEvent.changedTouches[0].pageY );
-
+            velocityY( 
+                set( ( endTouch.y - startTouch.y ) / ( endTouch.time - startTouch.time ) ) 
+            );
+            
             if ( movementTimer == null ) {
                 movementTimer = setInterval( function() {
-                    var newVelocityY = velocityY( add( accelerationY() ) ),
-                        newAccelerationY = accelerationY( set( 0 ) );
+                    target.css({
+                        'top':
+                             Math.floor( parseInt( target.css( 'top' ) ) + velocityY() * options.resolution ) + 'px',
+                        'left':
+                             Math.floor( parseInt( target.css( 'left' ) ) + velocityX() * options.resolution )  + 'px'
+                    });
 
-                    //console.log( "newVelocityY: %d\nnewAccelerationY: %d", newVelocityY, newAccelerationY );
-                     
-                    target.css( 'top', Math.floor( parseInt( target.css( 'top' ) ) + ( newVelocityY )  ) + 'px' );
-                    //console.log( Math.floor( parseInt(target.css( 'top' )) + ( newVelocityY ) ) + 'px' );
+                    var newVelocityX = velocityX( converge( options.deceleration ) ),
+                        newVelocityY = velocityY( converge( options.deceleration ) );
 
-                    velocityY( converge( options.deceleration ) );
-
-                    if ( newVelocityY === 0 ) {
+                    if ( newVelocityX === 0 && newVelocityY === 0 ) {
                         clearInterval( movementTimer );
                         movementTimer = null;
-                        //console.log( "interval cleared" );
                     }
                 }, options.resolution );
             }
