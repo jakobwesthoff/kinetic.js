@@ -27,6 +27,7 @@
     var noop = function( v ) {
             return v;
         },
+
         /**
          * Set data store to a new value
          */
@@ -35,6 +36,7 @@
                 return value;
             }
         },
+        
         /**
          * Add a value to the current data store value
          */
@@ -43,6 +45,7 @@
                 return oldValue + value;
             }
         },
+        
         /**
          * Converge against zero by the given value.
          *
@@ -59,6 +62,7 @@
                 return ( oldValue * newValue > 0 ) ? newValue : 0;
             }
         },
+        
         /**
          * Initialize a new data store
          *
@@ -80,6 +84,7 @@
                 return ( storageValue = op( storageValue ) );  
             }
         },
+        
         /**
          * Ecapsulate an event handling function to support one finger
          * touchevents as well as mouseevents using the same event data
@@ -144,6 +149,7 @@
                 }
             }
         }, 
+        
         /**
          * Determine if the current browser is capable of handling touch events
          * at all. 
@@ -159,6 +165,7 @@
                 return false;
             }
         },
+        
         /**
          * The next three variables contain the correct event strings to be
          * registered for either touch or mouse handling. Whatever is currently
@@ -167,11 +174,15 @@
         touchstart = isTouchCapable() ? "touchstart.kinetic" : "mousedown.kinetic",
         touchmove  = isTouchCapable() ? "touchmove.kinetic" : "mousemove.kinetic",
         touchend   = isTouchCapable() ? "touchend.kinetic" : "mouseup.kinetic",
+        
         /**
          * The id of the first finger which touched the display needs to be
          * stored across all events
          */
         firstFingerId = null;
+
+
+
 
     /**
      * Register the plugin jQuery function
@@ -194,6 +205,9 @@
                 lastTouches = null;
                 movementTimer = null,
                 target = $(this),
+                /**
+                 * Container element to position the content absolute inside it
+                 */
                 container = $( '<div />', {
                     css: {
                         'position': 'relative',
@@ -211,7 +225,8 @@
                 'left': '0px'
             }).wrap( container );
 
-            // Update the container to the real DOM element
+            // Update the container to the real DOM element instead of the
+            // generated one
             container = target.parent();
 
             /**
@@ -295,7 +310,10 @@
                     console.log( "timeframe to small" );
                     return;
                 }
-
+                
+                // Set the new velocity values calculated using the movement
+                // which happened during the last moments of the touchmove
+                // event
                 velocityX( 
                     set( ( endTouch.x - startTouch.x ) / ( endTouch.time - startTouch.time ) ) 
                 );
@@ -303,7 +321,9 @@
                 velocityY( 
                     set( ( endTouch.y - startTouch.y ) / ( endTouch.time - startTouch.time ) ) 
                 );
-                
+
+                // The movementTimer takes care of moving the content along,
+                // while decelerating it constantly until it stops.
                 if ( movementTimer == null ) {
                     movementTimer = setInterval( function() {
                         target.css({
@@ -313,6 +333,7 @@
                                  Math.floor( parseInt( target.css( 'left' ) ) + velocityX() * options.resolution )  + 'px'
                         });
 
+                        // Decelerate the movement constantly every step
                         var newVelocityX = velocityX( converge( options.deceleration ) ),
                             newVelocityY = velocityY( converge( options.deceleration ) );
 
