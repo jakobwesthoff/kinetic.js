@@ -202,13 +202,17 @@
         scrollBy = function( target, left, top ) {
             var oldTop  = parseFloat( target.css( "top" ) ),
                 oldLeft = parseFloat( target.css( "left" ) ),
+                containerWidth = target.parent().innerWidth(),
+                containerHeight = target.parent().innerHeight(),
+                contentWidth = target.innerWidth(), 
+                contentHeight = target.innerHeight(), 
                 oldBorder  = {
-                    'x': calculateScrollBorder( target.parent().innerWidth(), target.innerWidth(), oldLeft ),
-                    'y': calculateScrollBorder( target.parent().innerHeight(), target.innerHeight(), oldTop )
+                    'x': calculateScrollBorder( containerWidth, contentWidth, oldLeft ),
+                    'y': calculateScrollBorder( containerHeight, contentHeight, oldTop )
                 },
                 newBorder = {
-                    'x': calculateScrollBorder( target.parent().innerWidth(), target.innerWidth(), oldLeft - left ),
-                    'y': calculateScrollBorder( target.parent().innerHeight(), target.innerHeight(), oldTop - top )
+                    'x': calculateScrollBorder( containerWidth, contentWidth, oldLeft - left ),
+                    'y': calculateScrollBorder( containerHeight, contentHeight, oldTop - top )
                 };
 
             // Size down movement relative to the border offset if the border
