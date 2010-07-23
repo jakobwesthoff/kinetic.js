@@ -182,6 +182,7 @@
             resolution: 13,
             touchsamples: 500,
             accumulationTime: 200,
+            background: 'red',
             width: "400px",
             height: "400px"
         }, options );
@@ -199,6 +200,7 @@
                         'overflow': 'hidden',
                         'width': options.width,
                         'height': options.height,
+                        'background': options.background,
                         'border': "1px solid orange"
                     }
                 });
