@@ -47,19 +47,23 @@
         },
         
         /**
-         * Converge against zero by the given value.
+         * Converge to a certain bound by the given value.
          *
-         * If the current value is negative the new value will be added
-         * otherwise it will be substracted.
+         * If the current value is left of new value will be substracted
+         * otherwise added.
          *
-         * If the new would cross the zero border 0 is the new value set. 
+         * If the new value would cross the border the border is the new value
+         * set.
+         *
+         * If no border is given 0 is assumed 
          */
-        converge = function( value ) {
+        converge = function( value, border ) {
+            border = border || 0;
+
             return function( oldValue ) {
-                var newValue = ( oldValue > 0 ) ? ( oldValue - value ) : ( oldValue + value );
-                // Check if the value flipped from positive to negative or vice
-                // versa
-                return ( oldValue * newValue > 0 ) ? newValue : 0;
+                var newValue = ( oldValue > border ) ? ( oldValue - value ) : ( oldValue + value );
+                // Check if the value flipped
+                return ( ( oldValue - border ) * ( newValue - border ) > 0 ) ? newValue : border;
             }
         },
         
@@ -165,6 +169,62 @@
                 return false;
             }
         },
+
+        /**
+         * Calculate the scroll over offset based on container length, content
+         * length and movement offset.
+         *
+         * This function can be used to calculate X as well as Y Axis offsets.
+         *
+         * A negative value indicates a scroll offset on the begin of the
+         * content, while a positive value indicates an offset on the end.
+         *
+         * A zero return value indicates the content fits nicely inside the
+         * current container.
+         */
+        calculateScrollBorder = function( containerSize, contentSize, movement ) {
+            if ( movement > 0 ) {
+                // Scroll over at the beginning
+                return Math.floor( -1 * movement );
+            }
+
+            if ( -1 * movement + containerSize > contentSize ) {
+                return Math.ceil( -1 * movement + containerSize - contentSize );  
+            }
+
+            return 0;
+        },
+
+        /**
+         * Scroll the target element by a certain amount on the X and Y axis
+         * inside its container and return X and Y Axis scrolling borders
+         */
+        scrollBy = function( target, left, top ) {
+            var oldTop  = parseFloat( target.css( "top" ) ),
+                oldLeft = parseFloat( target.css( "left" ) ),
+                oldBorder  = {
+                    'x': calculateScrollBorder( target.parent().innerWidth(), target.innerWidth(), oldLeft ),
+                    'y': calculateScrollBorder( target.parent().innerHeight(), target.innerHeight(), oldTop )
+                },
+                newBorder = {
+                    'x': calculateScrollBorder( target.parent().innerWidth(), target.innerWidth(), oldLeft - left ),
+                    'y': calculateScrollBorder( target.parent().innerHeight(), target.innerHeight(), oldTop - top )
+                };
+
+            // Size down movement relative to the border offset if the border
+            // is increasing
+            if ( Math.abs( newBorder.y ) > Math.abs( oldBorder.y ) ) {
+                top  *= 1 / Math.log( Math.abs( newBorder.y ) );
+            }
+            if ( Math.abs( newBorder.x ) > Math.abs( oldBorder.x ) ) {
+                left *= 1 / Math.log( Math.abs( newBorder.x ) );
+            }
+
+            target.css({
+                'top': oldTop - top + "px",
+                'left': oldLeft - left + "px"
+            });
+        },
         
         /**
          * The next three variables contain the correct event strings to be
@@ -265,12 +325,11 @@
                     );
 
                     // Scroll by given movement
-                    target.css({
-                        'top': 
-                            parseInt( target.css( "top" ) ) - ( lastTouch.y - currentTouch.y ) + "px",
-                        'left':
-                            parseInt( target.css( "left" ) ) - ( lastTouch.x - currentTouch.x ) + "px",
-                    });
+                    scrollBy( 
+                        target, 
+                        lastTouch.x - currentTouch.x, 
+                        lastTouch.y - currentTouch.y 
+                    );
 
                     // Only store configured amount of samples
                     if ( lastTouches.length > options.touchsamples ) {
@@ -326,15 +385,13 @@
                 // while decelerating it constantly until it stops.
                 if ( movementTimer == null ) {
                     movementTimer = setInterval( function() {
-                        target.css({
-                            'top':
-                                 Math.floor( parseInt( target.css( 'top' ) ) + velocityY() * options.resolution ) + 'px',
-                            'left':
-                                 Math.floor( parseInt( target.css( 'left' ) ) + velocityX() * options.resolution )  + 'px'
-                        });
-
-                        // Decelerate the movement constantly every step
-                        var newVelocityX = velocityX( converge( options.deceleration ) ),
+                        var scrollBorder = scrollBy( 
+                                target, 
+                                -velocityX() * options.resolution, 
+                                -velocityY() * options.resolution 
+                            ),
+                            // Decelerate the movement constantly every step
+                            newVelocityX = velocityX( converge( options.deceleration ) ),
                             newVelocityY = velocityY( converge( options.deceleration ) );
 
                         if ( newVelocityX === 0 && newVelocityY === 0 ) {
