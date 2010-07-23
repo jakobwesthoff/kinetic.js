@@ -84,8 +84,103 @@
 
                 return data[id];
             }
-        };
+        },
+        /**
+         * Ecapsulate an event handling function to support one finger
+         * touchevents as well as mouseevents using the same event data
+         * structure.
+         */
+        encapsulateTouchEvent = function( fn ) {
+            // Copy touch event data from one structure to another
+            var copyTouchEventData = function( source, target ) {
+                $.each( ["client", "screen", "page"], function( i, name ) {
+                    $.each( ["X", "Y"], function( i, axis ) {
+                        target[name + axis] = source[name + axis];
+                    });
+                });
+                $.each( ["target", "identifier"], function( i, name ) {
+                    target[name] = source[name];
+                });
+            };
+             
+            return function( e ) {
+                // Transport variable to pass return values from within a inner
+                // closure to the outer scope
+                var returnValue = undefined;
 
+                switch( e.type )  {
+                    case 'mousedown':
+                    case 'mouseup':
+                    case 'mousemove':
+                        // Mouse events can simply be passed through
+                        return fn( e );
+                    case 'touchstart':
+                        // Only the first finger is used for touch handling
+                        if ( e.originalEvent.touches.length !== 1 ) {
+                            return;
+                        }
+
+                        // Save the touch id for later identification
+                        firstFingerId = e.originalEvent.touches[0].identifier;
+                        copyTouchEventData( e.originalEvent.touches[0], e );
+                        return fn ( e );
+                    case 'touchmove':
+                        // Make sure the first finger has been moved
+                        $.each( e.originalEvent.touches, function( i, touch ) {
+                            if ( touch.identifier === firstFingerId ) {
+                                copyTouchEventData( touch, e );
+                                returnValue = fn( e );
+                                // End the $.each
+                                return false;
+                            }
+                        });
+                        return returnValue;
+                    case 'touchend':
+                        // Make sure the first finger has been lifted
+                        $.each( e.originalEvent.changedTouches, function( i, touch ) {
+                            if ( touch.identifier === firstFingerId ) {
+                                copyTouchEventData( touch, e );
+                                returnValue = fn( e );
+                                // End the $.each
+                                return false;
+                            }
+                        });
+                        return returnValue;
+                }
+            }
+        }, 
+        /**
+         * Determine if the current browser is capable of handling touch events
+         * at all. 
+         *
+         * Therefore mouse events can be used on normal systems
+         */
+        isTouchCapable = function() {
+            var e = null;
+            try {
+                e = document.createEvent( "TouchEvent" );
+                return true;
+            } catch( exception ) {
+                return false;
+            }
+        },
+        /**
+         * The next three variables contain the correct event strings to be
+         * registered for either touch or mouse handling. Whatever is currently
+         * available
+         */
+        touchstart = isTouchCapable() ? "touchstart.kinetic" : "mousedown.kinetic",
+        touchmove  = isTouchCapable() ? "touchmove.kinetic" : "mousemove.kinetic",
+        touchend   = isTouchCapable() ? "touchend.kinetic" : "mouseup.kinetic",
+        /**
+         * The id of the first finger which touched the display needs to be
+         * stored across all events
+         */
+        firstFingerId = null;
+
+    /**
+     * Register the plugin jQuery function
+     */
     $.fn.kinetic = function( options ) {
         options = $.extend({
             deceleration: 0.03,            
@@ -120,15 +215,7 @@
         // Update the container to the real DOM element
         container = target.parent();
 
-        container.bind( "touchstart.kinetic", function( e ) {
-            var eo = e.originalEvent;
-
-
-            // Only handle first finger touchstart
-            if ( eo.touches.length !== 1 ) {
-                return;
-            }
-
+        container.bind( touchstart, encapsulateTouchEvent( function( e ) {
             // Stop all running movements
             if ( movementTimer !== null ) {
                 clearInterval( movementTimer );
@@ -137,56 +224,47 @@
 
             lastTouches = [{
                 'time': e.timeStamp,
-                'x': eo.touches[0].pageX,
-                'y': eo.touches[0].pageY
+                'x': e.pageX,
+                'y': e.pageY
             }];
-        });
 
-        container.bind( "touchmove.kinetic", function( e ) {
-            var eo = e.originalEvent,
-                lastTouch = lastTouches[lastTouches.length - 1],
-                currentTouch = null;
+            // Movement needs only to be checked if a finger is down.
+            container.bind( touchmove, encapsulateTouchEvent( function( e ) {
+                var lastTouch = lastTouches[lastTouches.length - 1],
+                    currentTouch = null;
 
-            // Check if the first finger moved
-            if ( lastTouch.x == eo.touches[0].pageX && lastTouch.y == eo.touches[0].pageY ) {
-                // No movement of the first finger
-                // @TODO: Something ist not 100% correct here concerning
-                // multiple finger movement
-                return;
-            }
 
-            lastTouches.push( 
-                currentTouch = {
-                    'time': e.timeStamp,
-                    'x': eo.touches[0].pageX,
-                    'y': eo.touches[0].pageY
+                lastTouches.push( 
+                    currentTouch = {
+                        'time': e.timeStamp,
+                        'x': e.pageX,
+                        'y': e.pageY
+                    }
+                );
+
+                // Scroll by given movement
+                target.css({
+                    'top': 
+                        parseInt( target.css( "top" ) ) - ( lastTouch.y - currentTouch.y ) + "px",
+                    'left':
+                        parseInt( target.css( "left" ) ) - ( lastTouch.x - currentTouch.x ) + "px",
+                });
+
+                // Only store configured amount of samples
+                if ( lastTouches.length > options.touchsamples ) {
+                    lastTouches.shift();
                 }
-            );
+            }) );
+        }) );
 
-            // Scroll by given movement
-            target.css({
-                'top': 
-                    parseInt( target.css( "top" ) ) - ( lastTouch.y - currentTouch.y ) + "px",
-                'left':
-                    parseInt( target.css( "left" ) ) - ( lastTouch.x - currentTouch.x ) + "px",
-            });
-
-            // Only store configured amount of samples
-            if ( lastTouches.length > options.touchsamples ) {
-                lastTouches.shift();
-            }
-        });
-
-        container.bind( "touchend.kinetic", function( e ) {                      
-            var eo = e.originalEvent,
-                startTouch = null,
+        container.bind( touchend, encapsulateTouchEvent( function( e ) {                      
+            var startTouch = null,
                 endTouch = null;
 
-            /*
-            if ( eo.changedTouches.length != 1 ) {
-                return;
-            }
-*/
+            // Movement does not need to be checked until the finger is down on
+            // the display the next time
+            container.unbind( touchmove );
+
             // Only accumulate movements not older than
             // options.accumulationTime
             $.each( lastTouches, function( i, touch ) {
@@ -233,6 +311,6 @@
                     }
                 }, options.resolution );
             }
-        });
+        }) );
     }
 })( jQuery );
