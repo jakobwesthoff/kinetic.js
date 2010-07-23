@@ -60,29 +60,24 @@
             }
         },
         /**
-         * Initialize a new store bound to a certain jQuery-DOM object and a
-         * certain identifier.
+         * Initialize a new data store
          *
          * Different kinds of operations can be applied to a datastore.
          */
-        __store = function( element, id ) {
+        __store = function( initial ) {
+            var storageValue = initial || 0;
+
             /**
-             * Function to apply a certain operation onto the acceleration
-             * value stored insinde the DOM object.
+             * Function to apply a certain operation onto value stored inside
+             * the current data store
              */
             return function( op ) {
-                var data = element.data( "__kinetic__" ) || {};
-
                 // Do nothing, if no operation is provided
                 if ( op === undefined ) {
                     op = noop;
                 }
-                    
-                data[id] = op( data[id] || 0 );
                 
-                element.data( "__kinetic__", data );
-
-                return data[id];
+                return ( storageValue = op( storageValue ) );  
             }
         },
         /**
@@ -193,8 +188,8 @@
         
         // Handle element sets correctly
         this.each( function() {
-            var velocityX = __store( $(this), "velocityX" ),
-                velocityY = __store( $(this), "velocityY" ),
+            var velocityX = __store( 0 ),
+                velocityY = __store( 0 ),
                 lastTouches = null;
                 movementTimer = null,
                 target = $(this),
