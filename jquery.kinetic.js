@@ -196,6 +196,29 @@
             }
         },
 
+        /** 
+         * Extract the x and y movement out of the targets -webkit-transform
+         * property
+         */
+        extractMovement = function( target ) {
+            var textual = target.css( '-webkit-transform' ),
+                re = /^translate3d\((-?[0-9.]+)[^0-9-]+(-?[0-9.]+).+$/,
+                matches = re.exec( textual ); 
+
+            // If the value ist not initialized return 0,0
+            if ( matches === null ) {
+                return {
+                    x: 0,
+                    y: 0
+                };
+            }
+
+            return {
+                x: parseFloat( matches[1] ),
+                y: parseFloat( matches[2] )
+            };
+        },
+
         /**
          * Calculate the scroll over offset based on container length, content
          * length and movement offset.
@@ -229,34 +252,33 @@
          * controlled here.
          */
         scrollBy = function( target, left, top ) {
-            var oldTop  = parseFloat( target.css( "top" ) ),
-                oldLeft = parseFloat( target.css( "left" ) ),
+            var oldPosition = extractMovement( target ),
                 containerWidth = target.parent().innerWidth(),
                 containerHeight = target.parent().innerHeight(),
                 contentWidth = target.innerWidth(), 
                 contentHeight = target.innerHeight(), 
                 oldBorder  = {
-                    'x': calculateScrollBorder( containerWidth, contentWidth, oldLeft ),
-                    'y': calculateScrollBorder( containerHeight, contentHeight, oldTop )
+                    'x': calculateScrollBorder( containerWidth, contentWidth, oldPosition.x ),
+                    'y': calculateScrollBorder( containerHeight, contentHeight, oldPosition.y )
                 },
                 newBorder = {
-                    'x': calculateScrollBorder( containerWidth, contentWidth, oldLeft - left ),
-                    'y': calculateScrollBorder( containerHeight, contentHeight, oldTop - top )
+                    'x': calculateScrollBorder( containerWidth, contentWidth, oldPosition.x - left ),
+                    'y': calculateScrollBorder( containerHeight, contentHeight, oldPosition.y - top )
                 };
 
             // Size down movement relative to the border offset if the border
             // is increasing
             if ( Math.abs( newBorder.y ) > Math.abs( oldBorder.y ) ) {
-                top  *= 1 / Math.log( Math.abs( newBorder.y ) );
+                top *= 1 / Math.log( Math.abs( newBorder.y ) );
             }
             if ( Math.abs( newBorder.x ) > Math.abs( oldBorder.x ) ) {
                 left *= 1 / Math.log( Math.abs( newBorder.x ) );
             }
 
-            target.css({
-                'top': oldTop - top + "px",
-                'left': oldLeft - left + "px"
-            });
+            target.css( 
+                '-webkit-transform',
+                'translate3d(' + ( oldPosition.x - left ) + 'px,' + ( oldPosition.y - top ) + 'px,0)'
+            );
 
             return newBorder;
         },
@@ -438,29 +460,22 @@
                                 x: velocityX() * options.resolution,
                                 y: velocityY() * options.resolution
                             },
-                            newVelocity = {};
-
-                        // If the values cancel each other out set the kinetic
-                        // velocity to 0. This is not 100% correct. But for the
-                        // effect to look right it is enough.
-                        if ( ( velocity.x > 0 && rubberband().x < 0 ) 
-                          || ( velocity.x < 0 && rubberband().x > 0 ) ) {
-                            newVelocity.x = velocityX( set( 0 ) );
-                        } else {
-                            newVelocity.x = velocityX( converge( options.deceleration ) );
-                        }
-
-                        if ( ( velocity.y > 0 && rubberband().y < 0 ) 
-                          || ( velocity.y < 0 && rubberband().y > 0 ) ) {
-                            newVelocity.y = velocityY( set( 0 ) );
-                        } else {
-                            newVelocity.y = velocityY( converge( options.deceleration ) );
-                        }
+                            newVelocity = {
+                                x: velocityX( converge( options.deceleration + Math.abs( rubberband().x * options.rubberband ) ) ),
+                                y: velocityY( converge( options.deceleration + Math.abs( rubberband().y * options.rubberband ) ) )
+                            },
+                            // As long as there is a kinetic movement the
+                            // rubberband snap back velocity is ignored. Sized down
+                            // movement is handled by the scrollBy function
+                            movement = {
+                                x: velocity.x !== 0 ? velocity.x : rubberband().x,
+                                y: velocity.y !== 0 ? velocity.y : rubberband().y
+                            };
 
                         rubberband( tightenRubberband( scrollBy( 
                             target, 
-                            -1 * ( velocity.x + rubberband().x ), 
-                            -1 * ( velocity.y + rubberband().y ) 
+                            -1 * movement.x, 
+                            -1 * movement.y  
                         ), options.rubberband ) );
 
                         if ( newVelocity.x === 0 && newVelocity.y === 0 
