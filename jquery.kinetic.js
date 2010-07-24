@@ -66,6 +66,26 @@
                 return ( ( oldValue - border ) * ( newValue - border ) > 0 ) ? newValue : border;
             }
         },
+
+        /**
+         * Modify the value store holding the rubber band velocity by using new
+         * border values, to calculate the new force to be applied.
+         */
+        tightenRubberband = function( border, factor ) {
+            return function( oldRubberband ) {
+                var rubberband = {x: 0, y:0};
+
+                if ( border.x !== 0 ) {
+                    rubberband.x = border.x * factor;
+                }
+
+                if ( border.y !== 0 ) {
+                    rubberband.y = border.y * factor;
+                }
+
+                return rubberband;
+            }
+        },
         
         /**
          * Initialize a new data store
@@ -116,6 +136,7 @@
                     case 'mousedown':
                     case 'mouseup':
                     case 'mousemove':
+                        e.preventDefault();
                         // Mouse events can simply be passed through
                         return fn( e );
                     case 'touchstart':
@@ -140,6 +161,11 @@
                         });
                         return returnValue;
                     case 'touchend':
+                        // Ensure the last finger has been lifted
+                        if ( e.originalEvent.changedTouches.length > 1 ) {
+                            return;
+                        }
+                        
                         // Make sure the first finger has been lifted
                         $.each( e.originalEvent.changedTouches, function( i, touch ) {
                             if ( touch.identifier === firstFingerId ) {
@@ -198,6 +224,9 @@
         /**
          * Scroll the target element by a certain amount on the X and Y axis
          * inside its container and return X and Y Axis scrolling borders
+         *
+         * Furthermore the rubber band effect while reaching the border will be
+         * controlled here.
          */
         scrollBy = function( target, left, top ) {
             var oldTop  = parseFloat( target.css( "top" ) ),
@@ -228,6 +257,8 @@
                 'top': oldTop - top + "px",
                 'left': oldLeft - left + "px"
             });
+
+            return newBorder;
         },
         
         /**
@@ -254,6 +285,7 @@
     $.fn.kinetic = function( options ) {
         options = $.extend({
             deceleration: 0.03,            
+            rubberband: 0.15,
             resolution: 13,
             touchsamples: 500,
             accumulationTime: 200,
@@ -266,6 +298,7 @@
         this.each( function() {
             var velocityX = __store( 0 ),
                 velocityY = __store( 0 ),
+                rubberband = __store( { x: 0, y: 0 } ),
                 lastTouches = null;
                 movementTimer = null,
                 target = $(this),
@@ -329,11 +362,11 @@
                     );
 
                     // Scroll by given movement
-                    scrollBy( 
+                    rubberband( tightenRubberband( scrollBy( 
                         target, 
                         lastTouch.x - currentTouch.x, 
                         lastTouch.y - currentTouch.y 
-                    );
+                    ), options.rubberband ) );
 
                     // Only store configured amount of samples
                     if ( lastTouches.length > options.touchsamples ) {
@@ -369,9 +402,21 @@
                 });
                     
                 if ( startTouch === null || endTouch === null ) {
-                    // No movement required
-                    console.log( "timeframe to small" );
-                    return;
+                    // No kinetic movement needed, but the rubberband may still
+                    // have some effect.
+                    if ( rubberband().x === 0 && rubberband().y === 0 ) {
+                        // No movement needed at all
+                        return;
+                    }
+
+                    startTouch = {
+                        x: 0, y: 0,
+                        time: 0
+                    };
+                    endTouch = {
+                        x: 0, y: 0,
+                        time: 1
+                    };
                 }
                 
                 // Set the new velocity values calculated using the movement
@@ -389,16 +434,37 @@
                 // while decelerating it constantly until it stops.
                 if ( movementTimer == null ) {
                     movementTimer = setInterval( function() {
-                        var scrollBorder = scrollBy( 
-                                target, 
-                                -velocityX() * options.resolution, 
-                                -velocityY() * options.resolution 
-                            ),
-                            // Decelerate the movement constantly every step
-                            newVelocityX = velocityX( converge( options.deceleration ) ),
-                            newVelocityY = velocityY( converge( options.deceleration ) );
+                        var velocity = {
+                                x: velocityX() * options.resolution,
+                                y: velocityY() * options.resolution
+                            },
+                            newVelocity = {};
 
-                        if ( newVelocityX === 0 && newVelocityY === 0 ) {
+                        // If the values cancel each other out set the kinetic
+                        // velocity to 0. This is not 100% correct. But for the
+                        // effect to look right it is enough.
+                        if ( ( velocity.x > 0 && rubberband().x < 0 ) 
+                          || ( velocity.x < 0 && rubberband().x > 0 ) ) {
+                            newVelocity.x = velocityX( set( 0 ) );
+                        } else {
+                            newVelocity.x = velocityX( converge( options.deceleration ) );
+                        }
+
+                        if ( ( velocity.y > 0 && rubberband().y < 0 ) 
+                          || ( velocity.y < 0 && rubberband().y > 0 ) ) {
+                            newVelocity.y = velocityY( set( 0 ) );
+                        } else {
+                            newVelocity.y = velocityY( converge( options.deceleration ) );
+                        }
+
+                        rubberband( tightenRubberband( scrollBy( 
+                            target, 
+                            -1 * ( velocity.x + rubberband().x ), 
+                            -1 * ( velocity.y + rubberband().y ) 
+                        ), options.rubberband ) );
+
+                        if ( newVelocity.x === 0 && newVelocity.y === 0 
+                          && rubberband().x === 0 && rubberband().y === 0 ) {
                             clearInterval( movementTimer );
                             movementTimer = null;
                         }
