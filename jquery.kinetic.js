@@ -2,7 +2,7 @@
  * Copyright (c) 2010 Jakob Westhoff <jakob@westhoffswelt.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
+ * of this software and associated documentation files (the 'Software'), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
@@ -11,7 +11,7 @@
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
@@ -117,12 +117,12 @@
         encapsulateTouchEvent = function( fn ) {
             // Copy touch event data from one structure to another
             var copyTouchEventData = function( source, target ) {
-                $.each( ["client", "screen", "page"], function( i, name ) {
-                    $.each( ["X", "Y"], function( i, axis ) {
+                $.each( ['client', 'screen', 'page'], function( i, name ) {
+                    $.each( ['X', 'Y'], function( i, axis ) {
                         target[name + axis] = source[name + axis];
                     });
                 });
-                $.each( ["target", "identifier"], function( i, name ) {
+                $.each( ['target', 'identifier'], function( i, name ) {
                     target[name] = source[name];
                 });
             };
@@ -189,7 +189,7 @@
         isTouchCapable = function() {
             var e = null;
             try {
-                e = document.createEvent( "TouchEvent" );
+                e = document.createEvent( 'TouchEvent' );
                 return true;
             } catch( exception ) {
                 return false;
@@ -288,9 +288,9 @@
          * registered for either touch or mouse handling. Whatever is currently
          * available
          */
-        touchstart = isTouchCapable() ? "touchstart.kinetic" : "mousedown.kinetic",
-        touchmove  = isTouchCapable() ? "touchmove.kinetic" : "mousemove.kinetic",
-        touchend   = isTouchCapable() ? "touchend.kinetic" : "mouseup.kinetic",
+        touchstart = isTouchCapable() ? 'touchstart.kinetic' : 'mousedown.kinetic',
+        touchmove  = isTouchCapable() ? 'touchmove.kinetic' : 'mousemove.kinetic',
+        touchend   = isTouchCapable() ? 'touchend.kinetic' : 'mouseup.kinetic',
         
         /**
          * The id of the first finger which touched the display needs to be
@@ -312,8 +312,8 @@
             touchsamples: 500,
             accumulationTime: 200,
             background: 'red',
-            width: "400px",
-            height: "400px"
+            width: '400px',
+            height: '400px'
         }, options );
         
         // Handle element sets correctly
@@ -334,7 +334,7 @@
                         'width': options.width,
                         'height': options.height,
                         'background': options.background,
-                        'border': "1px solid orange"
+                        'border': '1px solid orange'
                     }
                 });
 
