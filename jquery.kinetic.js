@@ -112,7 +112,7 @@
      * Extract the x and y movement out of the targets -webkit-transform
      * property
      */
-    function extractMovement( target ) {
+    function extractTransformTranslation( target ) {
         var textual = target.css( '-webkit-transform' ),
             re = /^translate3d\((-?[0-9.]+)[^0-9-]+(-?[0-9.]+).+$/,
             matches = re.exec( textual ); 
@@ -154,45 +154,6 @@
         }
 
         return 0;
-    }
-
-    /**
-     * Scroll the target element by a certain amount on the X and Y axis
-     * inside its container and return X and Y Axis scrolling borders
-     *
-     * Furthermore the rubber band effect while reaching the border will be
-     * controlled here.
-     */
-    function scrollBy( target, left, top ) {
-        var oldPosition = extractMovement( target ),
-            containerWidth = target.parent().innerWidth(),
-            containerHeight = target.parent().innerHeight(),
-            contentWidth = target.innerWidth(), 
-            contentHeight = target.innerHeight(), 
-            oldBorder  = {
-                'x': calculateScrollBorder( containerWidth, contentWidth, oldPosition.x ),
-                'y': calculateScrollBorder( containerHeight, contentHeight, oldPosition.y )
-            },
-            newBorder = {
-                'x': calculateScrollBorder( containerWidth, contentWidth, oldPosition.x - left ),
-                'y': calculateScrollBorder( containerHeight, contentHeight, oldPosition.y - top )
-            };
-
-        // Size down movement relative to the border offset if the border
-        // is increasing
-        if ( Math.abs( newBorder.y ) > Math.abs( oldBorder.y ) ) {
-            top *= 1 / Math.log( Math.abs( newBorder.y ) );
-        }
-        if ( Math.abs( newBorder.x ) > Math.abs( oldBorder.x ) ) {
-            left *= 1 / Math.log( Math.abs( newBorder.x ) );
-        }
-
-        target.css( 
-            '-webkit-transform',
-            'translate3d(' + ( oldPosition.x - left ) + 'px,' + ( oldPosition.y - top ) + 'px,0)'
-        );
-
-        return newBorder;
     }
 
 
@@ -317,6 +278,127 @@
      * Register the plugin jQuery function
      */
     $.fn.kinetic = function( options ) {
+        /**
+         * Draw the scrollbars based on the current position of the content and
+         * the calculated border values. 
+         */
+        function drawScrollbars( position, border ) {
+            var containerDimensions = {
+                    x: container.innerWidth(),
+                    y: container.innerHeight()
+                },
+                contentDimensions = {
+                    x: target.innerWidth(),
+                    y: target.innerHeight()
+                },
+                scrollbarTranslations = {
+                    x: extractTransformTranslation( scrollbars.x ),
+                    y: extractTransformTranslation( scrollbars.y )
+                },
+                scrollbarLengths = {
+                    x: Math.max( 
+                        options.scrollbarSize * 2,
+                        ( containerDimensions.x * containerDimensions.x / contentDimensions.x ) - Math.abs( border.x ) - options.scrollbarSize
+                    ),
+                    y: Math.max( 
+                        options.scrollbarSize * 2,
+                        ( containerDimensions.y * containerDimensions.y / contentDimensions.y ) - Math.abs( border.y ) - options.scrollbarSize
+                    )
+                },
+                scrollbarMovements = {
+                    x: ( border.x > 0 )
+                       ? ( containerDimensions.x - options.scrollbarSize - scrollbarLengths.x )
+                       : ( ( border.x < 0 )
+                           ? ( 0 )
+                           : ( Math.abs( position.x ) * containerDimensions.x / contentDimensions.x )
+                         ),
+                    y: ( border.y > 0 )
+                       ? ( containerDimensions.y - options.scrollbarSize - scrollbarLengths.y )
+                       : ( ( border.y < 0 )
+                           ? ( 0 )
+                           : ( Math.abs( position.y ) * containerDimensions.y / contentDimensions.y )
+                         )
+                };
+
+            scrollbars.x.css({
+                'width': scrollbarLengths.x + 'px',
+                '-webkit-transform': 'translate3d(' + scrollbarMovements.x + 'px,' + scrollbarTranslations.x.y + 'px,0)'
+            });
+
+            scrollbars.y.css({
+                'height': scrollbarLengths.y + 'px',
+                '-webkit-transform': 'translate3d(' + scrollbarTranslations.y.x + 'px,' + scrollbarMovements.y + 'px,0)'
+            });
+
+            if ( scrollbars.x.css( 'opacity' ) == 0 && options.directions.x ) {
+                scrollbars.x
+                    .stop()
+                    .css( 'opacity', options.scrollbarOpacity );
+            }
+            if ( !scrollbars.y.css( 'opacity' ) == 0 && options.directions.y ) {
+                scrollbars.y
+                    .stop()
+                    .css( 'opacity', options.scrollbarOpacity );
+            }
+        }
+
+        /**
+         * Scroll the target element by a certain amount on the X and Y axis
+         * inside its container and return X and Y Axis scrolling borders
+         *
+         * Furthermore the rubber band effect while reaching the border will be
+         * controlled here.
+         */
+        function scrollBy( left, top ) {
+            var oldPosition = extractTransformTranslation( target ),
+                containerWidth = container.innerWidth(),
+                containerHeight = container.innerHeight(),
+                contentWidth = target.innerWidth(), 
+                contentHeight = target.innerHeight(), 
+                oldBorder  = {
+                    'x': calculateScrollBorder( containerWidth, contentWidth, oldPosition.x ),
+                    'y': calculateScrollBorder( containerHeight, contentHeight, oldPosition.y )
+                },
+                newBorder = {
+                    'x': calculateScrollBorder( containerWidth, contentWidth, oldPosition.x - left ),
+                    'y': calculateScrollBorder( containerHeight, contentHeight, oldPosition.y - top )
+                },
+                newPosition = {};
+
+            // Size down movement relative to the border offset if the border
+            // is increasing
+            if ( Math.abs( newBorder.y ) > Math.abs( oldBorder.y ) ) {
+                top *= 1 / Math.log( Math.abs( newBorder.y ) );
+            }
+            if ( Math.abs( newBorder.x ) > Math.abs( oldBorder.x ) ) {
+                left *= 1 / Math.log( Math.abs( newBorder.x ) );
+            }
+
+            newPosition = {
+                x: oldPosition.x - left,
+                y: oldPosition.y - top
+            };
+
+            target.css( 
+                '-webkit-transform',
+                'translate3d(' + newPosition.x + 'px,' + ( newPosition.y - top ) + 'px,0)'
+            );
+
+            drawScrollbars( newPosition, newBorder );
+            
+            // This border is not 100% accurate, as it would have to be
+            // recalculated using the down sized movement values. But it is
+            // accurate enough for our purpose, therefore further calculations
+            // are not done for performance reasons.
+            return newBorder;
+        }
+
+
+
+        /**
+         * Beginning of main plugin code
+         */
+
         options = $.extend({
             deceleration: 0.03,            
             rubberband: 0.15,
@@ -324,6 +406,13 @@
             touchsamples: 500,
             accumulationTime: 200,
             directions: {x: true, y: true},
+            scrollbars: {x: true, y: true},
+            scrollbarSpace: 3,
+            scrollbarSize: 5,
+            scrollbarColor: '#222222',
+            scrollbarOpacity: 0.75,
+            scrollbarFadeOutTime: 400,
+            scrollbarFadeOutDelay: 100,
             background: 'red',
             width: '400px',
             height: '400px'
@@ -349,7 +438,37 @@
                         'background': options.background,
                         'border': '1px solid orange'
                     }
-                });
+                }),
+                /**
+                 * Scrollbars to show position while scrolling
+                 */
+                scrollbars = {
+                    x: $( '<div />', {
+                        css: {
+                            'position': 'absolute',
+                            'top': '0',
+                            'left': '0',
+                            'height': options.scrollbarSize + 'px',
+                            'opacity': 0,
+                            'background': options.scrollbarColor,
+                            '-webkit-border-radius': options.scrollbarSize,
+                            '-webkit-transform': 'translate3d(0,' + ( parseInt( options.height ) - parseInt( options.scrollbarSize ) - parseInt( options.scrollbarSpace ) ) + 'px,0)'
+                        }
+                    }),
+                    y: $( '<div />', {
+                        css: {
+                            'position': 'absolute',
+                            'top': '0',
+                            'left': '0',
+                            'width': options.scrollbarSize + 'px',
+                            'opacity': 0,
+                            'background': options.scrollbarColor,
+                            '-webkit-border-radius': options.scrollbarSize,
+                            '-webkit-transform': 'translate3d(' + ( parseInt( options.width ) - parseInt( options.scrollbarSize ) - parseInt( options.scrollbarSpace ) ) + 'px,0,0)'
+                        }
+                    })
+                };
+
 
             target.css({
                 'position': 'absolute',
@@ -360,6 +479,11 @@
             // Update the container to the real DOM element instead of the
             // generated one
             container = target.parent();
+
+            // Add the scrollbars
+            container
+                .append( scrollbars.x )
+                .append( scrollbars.y );
 
             /**
              * Handle initial data gathering the moment a finger touches the
@@ -398,7 +522,6 @@
 
                     // Scroll by given movement
                     rubberband( store.tightenRubberband( scrollBy( 
-                        target, 
                         options.directions.x ? lastTouch.x - currentTouch.x : 0, 
                         options.directions.y ? lastTouch.y - currentTouch.y : 0
                     ), options.rubberband ) );
@@ -439,10 +562,6 @@
                 if ( startTouch === null || endTouch === null ) {
                     // No kinetic movement needed, but the rubberband may still
                     // have some effect.
-                    if ( rubberband().x === 0 && rubberband().y === 0 ) {
-                        // No movement needed at all
-                        return;
-                    }
 
                     startTouch = {
                         x: 0, y: 0,
@@ -490,7 +609,6 @@
                             };
 
                         rubberband( store.tightenRubberband( scrollBy( 
-                            target, 
                             -1 * movement.x, 
                             -1 * movement.y  
                         ), options.rubberband ) );
@@ -499,6 +617,21 @@
                           && rubberband().x === 0 && rubberband().y === 0 ) {
                             clearInterval( movementTimer );
                             movementTimer = null;
+                            
+                            // Fadeout the scrollbars
+                            scrollbars.x
+                                .delay( options.scrollbarFadeOutDelay )
+                                .animate(
+                                    { opacity: 0 },
+                                    options.scrollbarsFadeOutTime
+                                );
+
+                            scrollbars.y
+                                .delay( options.scrollbarFadeOutDelay )
+                                .animate(
+                                    { opacity: 0 },
+                                    options.scrollbarsFadeOutTime
+                                );
                         }
                     }, options.resolution );
                 }
