@@ -323,6 +323,7 @@
             resolution: 13,
             touchsamples: 500,
             accumulationTime: 200,
+            directions: {x: true, y: true},
             background: 'red',
             width: '400px',
             height: '400px'
@@ -398,8 +399,8 @@
                     // Scroll by given movement
                     rubberband( store.tightenRubberband( scrollBy( 
                         target, 
-                        lastTouch.x - currentTouch.x, 
-                        lastTouch.y - currentTouch.y 
+                        options.directions.x ? lastTouch.x - currentTouch.x : 0, 
+                        options.directions.y ? lastTouch.y - currentTouch.y : 0
                     ), options.rubberband ) );
 
                     // Only store configured amount of samples
@@ -456,13 +457,17 @@
                 // Set the new velocity values calculated using the movement
                 // which happened during the last moments of the touchmove
                 // event
-                velocityX( 
-                    store.set( ( endTouch.x - startTouch.x ) / ( endTouch.time - startTouch.time ) ) 
-                );
+                if ( options.directions.x ) {
+                    velocityX( 
+                        store.set( ( endTouch.x - startTouch.x ) / ( endTouch.time - startTouch.time ) ) 
+                    );
+                }
 
-                velocityY( 
-                    store.set( ( endTouch.y - startTouch.y ) / ( endTouch.time - startTouch.time ) ) 
-                );
+                if( options.directions.y ) {
+                    velocityY( 
+                        store.set( ( endTouch.y - startTouch.y ) / ( endTouch.time - startTouch.time ) ) 
+                    );
+                }
 
                 // The movementTimer takes care of moving the content along,
                 // while decelerating it constantly until it stops.
