@@ -21,267 +21,280 @@
  */
 
 (function( $ ) {
-        /**
-         * Apply no operation to a data store
-         */
-    var noop = function( v ) {
-            return v;
-        },
+    /**
+     * Ecapsulate an event handling function to support one finger
+     * touchevents as well as mouseevents using the same event data
+     * structure.
+     */
+    function encapsulateTouchEvent( fn ) {
+        // Copy touch event data from one structure to another
+        var copyTouchEventData = function( source, target ) {
+            $.each( ['client', 'screen', 'page'], function( i, name ) {
+                $.each( ['X', 'Y'], function( i, axis ) {
+                    target[name + axis] = source[name + axis];
+                });
+            });
+            $.each( ['target', 'identifier'], function( i, name ) {
+                target[name] = source[name];
+            });
+        };
+         
+        return function( e ) {
+            // Transport variable to pass return values from within a inner
+            // closure to the outer scope
+            var returnValue = undefined;
 
-        /**
-         * Set data store to a new value
-         */
-        set = function( value ) {
-            return function( oldValue ) {
-                return value;
+            switch( e.type )  {
+                case 'mousedown':
+                case 'mouseup':
+                case 'mousemove':
+                    e.preventDefault();
+                    // Mouse events can simply be passed through
+                    return fn( e );
+                case 'touchstart':
+                    // Only the first finger is used for touch handling
+                    if ( e.originalEvent.touches.length !== 1 ) {
+                        return;
+                    }
+
+                    // Save the touch id for later identification
+                    firstFingerId = e.originalEvent.touches[0].identifier;
+                    copyTouchEventData( e.originalEvent.touches[0], e );
+                    return fn ( e );
+                case 'touchmove':
+                    // Make sure the first finger has been moved
+                    $.each( e.originalEvent.touches, function( i, touch ) {
+                        if ( touch.identifier === firstFingerId ) {
+                            copyTouchEventData( touch, e );
+                            returnValue = fn( e );
+                            // End the $.each
+                            return false;
+                        }
+                    });
+                    return returnValue;
+                case 'touchend':
+                    // Ensure the last finger has been lifted
+                    if ( e.originalEvent.changedTouches.length > 1 ) {
+                        return;
+                    }
+                    
+                    // Make sure the first finger has been lifted
+                    $.each( e.originalEvent.changedTouches, function( i, touch ) {
+                        if ( touch.identifier === firstFingerId ) {
+                            copyTouchEventData( touch, e );
+                            returnValue = fn( e );
+                            // End the $.each
+                            return false;
+                        }
+                    });
+                    return returnValue;
             }
-        },
-        
-        /**
-         * Add a value to the current data store value
-         */
-        add = function( value ) {
-            return function( oldValue ) {
-                return oldValue + value;
-            }
-        },
-        
-        /**
-         * Converge to a certain bound by the given value.
-         *
-         * If the current value is left of new value will be substracted
-         * otherwise added.
-         *
-         * If the new value would cross the border the border is the new value
-         * set.
-         *
-         * If no border is given 0 is assumed 
-         */
-        converge = function( value, border ) {
-            border = border || 0;
+        }
+    } 
+    
+    /**
+     * Determine if the current browser is capable of handling touch events
+     * at all. 
+     *
+     * Therefore mouse events can be used on normal systems
+     */
+    function isTouchCapable() {
+        var e = null;
+        try {
+            e = document.createEvent( 'TouchEvent' );
+            return true;
+        } catch( exception ) {
+            return false;
+        }
+    }
 
-            return function( oldValue ) {
-                var newValue = ( oldValue > border ) ? ( oldValue - value ) : ( oldValue + value );
-                // Check if the value flipped
-                return ( ( oldValue - border ) * ( newValue - border ) > 0 ) ? newValue : border;
-            }
-        },
+    /** 
+     * Extract the x and y movement out of the targets -webkit-transform
+     * property
+     */
+    function extractMovement( target ) {
+        var textual = target.css( '-webkit-transform' ),
+            re = /^translate3d\((-?[0-9.]+)[^0-9-]+(-?[0-9.]+).+$/,
+            matches = re.exec( textual ); 
+
+        // If the value ist not initialized return 0,0
+        if ( matches === null ) {
+            return {
+                x: 0,
+                y: 0
+            };
+        }
+
+        return {
+            x: parseFloat( matches[1] ),
+            y: parseFloat( matches[2] )
+        };
+    }
+
+    /**
+     * Calculate the scroll over offset based on container length, content
+     * length and movement offset.
+     *
+     * This function can be used to calculate X as well as Y Axis offsets.
+     *
+     * A negative value indicates a scroll offset on the begin of the
+     * content, while a positive value indicates an offset on the end.
+     *
+     * A zero return value indicates the content fits nicely inside the
+     * current container.
+     */
+    function calculateScrollBorder( containerSize, contentSize, movement ) {
+        if ( movement > 0 ) {
+            // Scroll over at the beginning
+            return Math.floor( -1 * movement );
+        }
+
+        if ( -1 * movement + containerSize > contentSize ) {
+            return Math.ceil( -1 * movement + containerSize - contentSize );  
+        }
+
+        return 0;
+    }
+
+    /**
+     * Scroll the target element by a certain amount on the X and Y axis
+     * inside its container and return X and Y Axis scrolling borders
+     *
+     * Furthermore the rubber band effect while reaching the border will be
+     * controlled here.
+     */
+    function scrollBy( target, left, top ) {
+        var oldPosition = extractMovement( target ),
+            containerWidth = target.parent().innerWidth(),
+            containerHeight = target.parent().innerHeight(),
+            contentWidth = target.innerWidth(), 
+            contentHeight = target.innerHeight(), 
+            oldBorder  = {
+                'x': calculateScrollBorder( containerWidth, contentWidth, oldPosition.x ),
+                'y': calculateScrollBorder( containerHeight, contentHeight, oldPosition.y )
+            },
+            newBorder = {
+                'x': calculateScrollBorder( containerWidth, contentWidth, oldPosition.x - left ),
+                'y': calculateScrollBorder( containerHeight, contentHeight, oldPosition.y - top )
+            };
+
+        // Size down movement relative to the border offset if the border
+        // is increasing
+        if ( Math.abs( newBorder.y ) > Math.abs( oldBorder.y ) ) {
+            top *= 1 / Math.log( Math.abs( newBorder.y ) );
+        }
+        if ( Math.abs( newBorder.x ) > Math.abs( oldBorder.x ) ) {
+            left *= 1 / Math.log( Math.abs( newBorder.x ) );
+        }
+
+        target.css( 
+            '-webkit-transform',
+            'translate3d(' + ( oldPosition.x - left ) + 'px,' + ( oldPosition.y - top ) + 'px,0)'
+        );
+
+        return newBorder;
+    }
+
 
         /**
-         * Modify the value store holding the rubber band velocity by using new
-         * border values, to calculate the new force to be applied.
+         * Data store which may be used to store arbitrary data and apply
+         * certain operation on it.
+         *
+         * This storage is no real object (in the sense of OO), as its operations
+         * work on all different kinds of input data. Therefore they strictly do
+         * not belong together as methods of one class.
          */
-        tightenRubberband = function( border, factor ) {
-            return function( oldRubberband ) {
-                var rubberband = {x: 0, y:0};
+    var store = {
+            /**
+             * Initialize a new data store
+             *
+             * An initial value may be supplied. If none is given 0 is assumed as
+             * default.
+             */
+            init: function( initial ) {
+                var storageValue = initial || 0;
 
-                if ( border.x !== 0 ) {
-                    rubberband.x = border.x * factor;
+                /**
+                 * Function to apply a certain operation onto value stored inside
+                 * the current data store
+                 */
+                return function( op ) {
+                    // Do nothing, if no operation is provided
+                    if ( op === undefined ) {
+                        op = store.noop;
+                    }
+                    
+                    return ( storageValue = op( storageValue ) );  
                 }
-
-                if ( border.y !== 0 ) {
-                    rubberband.y = border.y * factor;
-                }
-
-                return rubberband;
-            }
-        },
-        
-        /**
-         * Initialize a new data store
-         *
-         * Different kinds of operations can be applied to a datastore.
-         */
-        __store = function( initial ) {
-            var storageValue = initial || 0;
+            },
 
             /**
-             * Function to apply a certain operation onto value stored inside
-             * the current data store
+             * Apply no operation to a data store
              */
-            return function( op ) {
-                // Do nothing, if no operation is provided
-                if ( op === undefined ) {
-                    op = noop;
+            noop: function( v ) {
+                return v;
+            },
+
+            /**
+             * Set data store to a new value
+             */
+            set: function( value ) {
+                return function( oldValue ) {
+                    return value;
                 }
-                
-                return ( storageValue = op( storageValue ) );  
-            }
-        },
-        
-        /**
-         * Ecapsulate an event handling function to support one finger
-         * touchevents as well as mouseevents using the same event data
-         * structure.
-         */
-        encapsulateTouchEvent = function( fn ) {
-            // Copy touch event data from one structure to another
-            var copyTouchEventData = function( source, target ) {
-                $.each( ['client', 'screen', 'page'], function( i, name ) {
-                    $.each( ['X', 'Y'], function( i, axis ) {
-                        target[name + axis] = source[name + axis];
-                    });
-                });
-                $.each( ['target', 'identifier'], function( i, name ) {
-                    target[name] = source[name];
-                });
-            };
-             
-            return function( e ) {
-                // Transport variable to pass return values from within a inner
-                // closure to the outer scope
-                var returnValue = undefined;
+            },
 
-                switch( e.type )  {
-                    case 'mousedown':
-                    case 'mouseup':
-                    case 'mousemove':
-                        e.preventDefault();
-                        // Mouse events can simply be passed through
-                        return fn( e );
-                    case 'touchstart':
-                        // Only the first finger is used for touch handling
-                        if ( e.originalEvent.touches.length !== 1 ) {
-                            return;
-                        }
+            /**
+             * Add a value to the current data store value
+             */
+            add: function( value ) {
+                return function( oldValue ) {
+                    return oldValue + value;
+                }
+            },
+            
+            /**
+             * Converge to a certain bound by the given value.
+             *
+             * If the current value is left of new value will be substracted
+             * otherwise added.
+             *
+             * If the new value would cross the border the border is the new value
+             * set.
+             *
+             * If no border is given 0 is assumed 
+             */
+            converge: function( value, border ) {
+                border = border || 0;
 
-                        // Save the touch id for later identification
-                        firstFingerId = e.originalEvent.touches[0].identifier;
-                        copyTouchEventData( e.originalEvent.touches[0], e );
-                        return fn ( e );
-                    case 'touchmove':
-                        // Make sure the first finger has been moved
-                        $.each( e.originalEvent.touches, function( i, touch ) {
-                            if ( touch.identifier === firstFingerId ) {
-                                copyTouchEventData( touch, e );
-                                returnValue = fn( e );
-                                // End the $.each
-                                return false;
-                            }
-                        });
-                        return returnValue;
-                    case 'touchend':
-                        // Ensure the last finger has been lifted
-                        if ( e.originalEvent.changedTouches.length > 1 ) {
-                            return;
-                        }
-                        
-                        // Make sure the first finger has been lifted
-                        $.each( e.originalEvent.changedTouches, function( i, touch ) {
-                            if ( touch.identifier === firstFingerId ) {
-                                copyTouchEventData( touch, e );
-                                returnValue = fn( e );
-                                // End the $.each
-                                return false;
-                            }
-                        });
-                        return returnValue;
+                return function( oldValue ) {
+                    var newValue = ( oldValue > border ) ? ( oldValue - value ) : ( oldValue + value );
+                    // Check if the value flipped
+                    return ( ( oldValue - border ) * ( newValue - border ) > 0 ) ? newValue : border;
+                }
+            },
+
+            /**
+             * Modify the value store holding the rubber band velocity by using new
+             * border values, to calculate the new force to be applied.
+             */
+            tightenRubberband: function( border, factor ) {
+                return function( oldRubberband ) {
+                    var rubberband = {x: 0, y:0};
+
+                    if ( border.x !== 0 ) {
+                        rubberband.x = border.x * factor;
+                    }
+
+                    if ( border.y !== 0 ) {
+                        rubberband.y = border.y * factor;
+                    }
+
+                    return rubberband;
                 }
             }
-        }, 
-        
-        /**
-         * Determine if the current browser is capable of handling touch events
-         * at all. 
-         *
-         * Therefore mouse events can be used on normal systems
-         */
-        isTouchCapable = function() {
-            var e = null;
-            try {
-                e = document.createEvent( 'TouchEvent' );
-                return true;
-            } catch( exception ) {
-                return false;
-            }
         },
 
-        /** 
-         * Extract the x and y movement out of the targets -webkit-transform
-         * property
-         */
-        extractMovement = function( target ) {
-            var textual = target.css( '-webkit-transform' ),
-                re = /^translate3d\((-?[0-9.]+)[^0-9-]+(-?[0-9.]+).+$/,
-                matches = re.exec( textual ); 
-
-            // If the value ist not initialized return 0,0
-            if ( matches === null ) {
-                return {
-                    x: 0,
-                    y: 0
-                };
-            }
-
-            return {
-                x: parseFloat( matches[1] ),
-                y: parseFloat( matches[2] )
-            };
-        },
-
-        /**
-         * Calculate the scroll over offset based on container length, content
-         * length and movement offset.
-         *
-         * This function can be used to calculate X as well as Y Axis offsets.
-         *
-         * A negative value indicates a scroll offset on the begin of the
-         * content, while a positive value indicates an offset on the end.
-         *
-         * A zero return value indicates the content fits nicely inside the
-         * current container.
-         */
-        calculateScrollBorder = function( containerSize, contentSize, movement ) {
-            if ( movement > 0 ) {
-                // Scroll over at the beginning
-                return Math.floor( -1 * movement );
-            }
-
-            if ( -1 * movement + containerSize > contentSize ) {
-                return Math.ceil( -1 * movement + containerSize - contentSize );  
-            }
-
-            return 0;
-        },
-
-        /**
-         * Scroll the target element by a certain amount on the X and Y axis
-         * inside its container and return X and Y Axis scrolling borders
-         *
-         * Furthermore the rubber band effect while reaching the border will be
-         * controlled here.
-         */
-        scrollBy = function( target, left, top ) {
-            var oldPosition = extractMovement( target ),
-                containerWidth = target.parent().innerWidth(),
-                containerHeight = target.parent().innerHeight(),
-                contentWidth = target.innerWidth(), 
-                contentHeight = target.innerHeight(), 
-                oldBorder  = {
-                    'x': calculateScrollBorder( containerWidth, contentWidth, oldPosition.x ),
-                    'y': calculateScrollBorder( containerHeight, contentHeight, oldPosition.y )
-                },
-                newBorder = {
-                    'x': calculateScrollBorder( containerWidth, contentWidth, oldPosition.x - left ),
-                    'y': calculateScrollBorder( containerHeight, contentHeight, oldPosition.y - top )
-                };
-
-            // Size down movement relative to the border offset if the border
-            // is increasing
-            if ( Math.abs( newBorder.y ) > Math.abs( oldBorder.y ) ) {
-                top *= 1 / Math.log( Math.abs( newBorder.y ) );
-            }
-            if ( Math.abs( newBorder.x ) > Math.abs( oldBorder.x ) ) {
-                left *= 1 / Math.log( Math.abs( newBorder.x ) );
-            }
-
-            target.css( 
-                '-webkit-transform',
-                'translate3d(' + ( oldPosition.x - left ) + 'px,' + ( oldPosition.y - top ) + 'px,0)'
-            );
-
-            return newBorder;
-        },
         
         /**
          * The next three variables contain the correct event strings to be
@@ -297,7 +310,6 @@
          * stored across all events
          */
         firstFingerId = null;
-
 
 
 
@@ -318,9 +330,9 @@
         
         // Handle element sets correctly
         this.each( function() {
-            var velocityX = __store( 0 ),
-                velocityY = __store( 0 ),
-                rubberband = __store( { x: 0, y: 0 } ),
+            var velocityX = store.init( 0 ),
+                velocityY = store.init( 0 ),
+                rubberband = store.init( { x: 0, y: 0 } ),
                 lastTouches = null;
                 movementTimer = null,
                 target = $(this),
@@ -384,7 +396,7 @@
                     );
 
                     // Scroll by given movement
-                    rubberband( tightenRubberband( scrollBy( 
+                    rubberband( store.tightenRubberband( scrollBy( 
                         target, 
                         lastTouch.x - currentTouch.x, 
                         lastTouch.y - currentTouch.y 
@@ -445,11 +457,11 @@
                 // which happened during the last moments of the touchmove
                 // event
                 velocityX( 
-                    set( ( endTouch.x - startTouch.x ) / ( endTouch.time - startTouch.time ) ) 
+                    store.set( ( endTouch.x - startTouch.x ) / ( endTouch.time - startTouch.time ) ) 
                 );
 
                 velocityY( 
-                    set( ( endTouch.y - startTouch.y ) / ( endTouch.time - startTouch.time ) ) 
+                    store.set( ( endTouch.y - startTouch.y ) / ( endTouch.time - startTouch.time ) ) 
                 );
 
                 // The movementTimer takes care of moving the content along,
@@ -461,8 +473,8 @@
                                 y: velocityY() * options.resolution
                             },
                             newVelocity = {
-                                x: velocityX( converge( options.deceleration + Math.abs( rubberband().x * options.rubberband ) ) ),
-                                y: velocityY( converge( options.deceleration + Math.abs( rubberband().y * options.rubberband ) ) )
+                                x: velocityX( store.converge( options.deceleration + Math.abs( rubberband().x * options.rubberband ) ) ),
+                                y: velocityY( store.converge( options.deceleration + Math.abs( rubberband().y * options.rubberband ) ) )
                             },
                             // As long as there is a kinetic movement the
                             // rubberband snap back velocity is ignored. Sized down
@@ -472,7 +484,7 @@
                                 y: velocity.y !== 0 ? velocity.y : rubberband().y
                             };
 
-                        rubberband( tightenRubberband( scrollBy( 
+                        rubberband( store.tightenRubberband( scrollBy( 
                             target, 
                             -1 * movement.x, 
                             -1 * movement.y  
